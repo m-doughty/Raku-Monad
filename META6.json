@@ -1,0 +1,24 @@
+{
+  "name": "Monad",
+  "version": "0.1.0",
+  "auth": "zef:apogee",
+  "description": "Implementations of common Monads in Raku.",
+  "authors": ["Matt Doughty"],
+  "license": "Artistic-2.0",
+  "provides": {
+    "Monad": "lib/Monad.rakumod",
+    "Monad::Maybe": "lib/Monad/Maybe.rakumod",
+    "Monad::Either": "lib/Monad/Either.rakumod",
+    "Monad::Reader": "lib/Monad/Reader.rakumod",
+    "Monad::State": "lib/Monad/State.rakumod",
+    "Monad::Writer": "lib/Monad/Writer.rakumod"
+  },
+  "depends": [],
+  "source-url": "https://github.com/m-doughty/Raku-Monad.git",
+  "tags": ["monad", "functional"],
+  "support": {
+    "bugtracker": "https://github.com/m-doughty/Raku-Monad/issues",
+    "source": "https://github.com/m-doughty/Raku-Monad"
+  }
+}
+
