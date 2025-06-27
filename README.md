@@ -154,7 +154,7 @@ use Monad;
 use Monad::Writer;
 
 sub say_hi ($name) {
-    Monad::Writer.new(value => "Hello $name", log => "Greeted $name.")
+    Monad::Writer.new(value => "Hello $name", logs => "Greeted $name.")
 }
 
 my $w1 = Monad::Writer.unit("World");
