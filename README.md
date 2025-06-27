@@ -161,12 +161,12 @@ my $w1 = Monad::Writer.unit("World");
 my $w2 = $w1 >>= &say_hi;
 
 say $w2.value; # "Hello World"
-say $w2.log;   # "Greeted World."
+say $w2.logs;   # "Greeted World."
 
 # map does not change log
 my $w3 = $w2 >>- *.uc;
 say $w3.value; # "HELLO WORLD"
-say $w3.log;   # "Greeted World."
+say $w3.logs;   # "Greeted World."
 ```
 
 ## More Examples
