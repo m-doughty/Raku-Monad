@@ -1,0 +1,289 @@
+=begin pod
+
+=head1 NAME
+
+Monad - Parametric-typed monads for Raku
+
+=head1 SYNOPSIS
+
+=begin code :lang<raku>
+
+use Monad::Maybe;
+use Monad::Either;
+
+# Type-parameterized: compile-time checks on the contained value
+my Monad::Maybe[Int] $n = Monad::Maybe[Int].some(42);
+say $n.unwrap;                          # 42
+
+my $err = Monad::Maybe[Int].some('x'); # throws: Str isn't Int
+
+# Or untyped (legacy) — everything defaults to Any
+my $m = Monad::Maybe.some([1, 2, 3]);
+say $m.is-some;                         # True
+
+# Infix operators
+my $doubled = Monad::Maybe[Int].some(5) >>- { $_ * 2 };
+say $doubled.unwrap;                    # 10
+
+=end code
+
+=head1 DESCRIPTION
+
+C<Monad> is a small collection of parametric-typed monads for Raku: C<Maybe>,
+C<Either>, C<List>, C<Writer>, C<Reader>, and C<State>. The value-carrying
+monads accept a type parameter on their payload, giving you compile-time
+checking and self-documenting signatures:
+
+=begin code :lang<raku>
+
+sub load-user(Int $id --> Monad::Maybe[User]) { ... }
+sub parse(Str $raw --> Monad::Either[Str, AST]) { ... }
+
+=end code
+
+The typed forms are opt-in. Legacy C<Monad::Maybe.some(42)> (without the
+square brackets) still works — every type parameter defaults to C<Any>.
+
+=head1 WHY
+
+Raku already has C<Nil> and C<Failure> for representing absent-or-errored
+values, but both blur the line between "no value" and "something went
+wrong". Monads give you a structural answer:
+
+=item C<Maybe[T]> — a C<T> is either present (C<Some>) or absent (C<None>). Unambiguous.
+=item C<Either[L, R]> — a value is either a success (C<Right R>) or a failure (C<Left L>), both typed.
+=item C<List[T]> — a sequence of C<T>s, with C<bind> as flatMap.
+=item C<Writer[A, W]> — a value plus an accumulated log.
+=item C<Reader> / C<State> — computations parameterized by an environment.
+
+The payoff: your function signatures express optionality and error
+handling at the type level, so consumers have to handle both cases
+explicitly and can chain them fluently with C<map> and C<bind>.
+
+=head1 INSTALLATION
+
+=begin code :lang<bash>
+
+zef install Monad
+
+=end code
+
+=head1 INFIX OPERATORS
+
+Two exported operators keep chains readable:
+
+=item C<< >>= >> — bind. The function you bind to should take an unwrapped value and return a monad.
+=item C<< >>- >> — map. The function you map to should take and return unwrapped values.
+
+=begin code :lang<raku>
+
+my $result = Monad::Maybe[Int].some(3)
+    >>- { $_ * 2 }                                # Some(6)
+    >>= -> $v { $v > 5 ?? Monad::Maybe[Int].some($v) !! Monad::Maybe[Int].none }
+    >>- { $_ + 1 };                               # Some(7)
+
+=end code
+
+=head1 THE MONADS
+
+=head2 Monad::Maybe
+
+Represents a value that may or may not be present. Parameterized by the
+type of the contained value.
+
+=begin code :lang<raku>
+
+use Monad::Maybe;
+
+my Monad::Maybe[Str] $user = Monad::Maybe[Str].some('alice');
+my Monad::Maybe[Str] $none = Monad::Maybe[Str].none;
+
+say $user.is-some;     # True
+say $user.value;       # alice
+say $none.is-none;     # True
+say $none.unwrap;      # Nil
+
+# Chain with map / bind
+my $shout = $user.map({ .uc });
+say $shout.value;      # ALICE
+
+# Type mismatch throws at construction:
+try {
+    Monad::Maybe[Int].some('not an int');
+    CATCH { default { say "rejected: {.message}" } }
+}
+
+=end code
+
+=head2 Monad::Either
+
+Represents a value that is one of two types. Conventionally C<Left>
+carries an error and C<Right> carries success. Parameterized by the
+left and right types independently.
+
+=begin code :lang<raku>
+
+use Monad::Either;
+
+sub parse-int(Str $s --> Monad::Either[Str, Int]) {
+    $s ~~ /^ (\d+) $/
+        ?? Monad::Either[Str, Int].right(+$0)
+        !! Monad::Either[Str, Int].left("'$s' is not a number");
+}
+
+given parse-int('42') {
+    when .is-right { say "got: {.unwrap-right}" }   # got: 42
+    when .is-left  { say "error: {.unwrap-left}" }
+}
+
+# bind skips on Left, chains on Right
+my $result = parse-int('10')
+    >>= -> $n { Monad::Either[Str, Int].right($n * 2) }
+    >>= -> $n { $n > 100
+                ?? Monad::Either[Str, Int].left('too big')
+                !! Monad::Either[Str, Int].right($n) };
+say $result.gist;      # Right(20)
+
+=end code
+
+=head2 Monad::List
+
+A sequence monad. C<bind> (aka flatMap) applies a function that returns
+a List and flattens one level.
+
+=begin code :lang<raku>
+
+use Monad::List;
+
+my $lst = Monad::List[Int].of(1, 2, 3);
+
+# Map
+my $doubled = $lst.map({ $_ * 2 });
+say $doubled.values.List;   # (2 4 6)
+
+# flatMap
+my $pairs = $lst.bind(-> $n {
+    Monad::List[Int].of($n, $n * 10)
+});
+say $pairs.values.List;     # (1 10 2 20 3 30)
+
+=end code
+
+=head2 Monad::Writer
+
+Carries a value alongside an accumulated log. Parameterized by the
+value type and the log type (defaulting to C<Str>).
+
+=begin code :lang<raku>
+
+use Monad::Writer;
+
+my $w = Monad::Writer[Int, Str].unit(5);
+my $logged = $w.tell('starting with 5, ')
+              .map({ $_ * 2 })
+              .tell('doubled to ')
+              .bind(-> $v {
+                  Monad::Writer[Int, Str].new(value => $v + 1, logs => "added one = {$v + 1}")
+              });
+
+say $logged.value;    # 11
+say $logged.logs;     # starting with 5, doubled to added one = 11
+
+=end code
+
+For non-string logs, subclass and override C<_combine>:
+
+=begin code :lang<raku>
+
+class ArrayLogWriter is Monad::Writer {
+    has @.logs;
+    method _combine($a, $b) { [|$a, |$b] }
+}
+
+=end code
+
+=head2 Monad::Reader and Monad::State
+
+Computational monads for carrying an environment (Reader) or threading
+a state through a pipeline (State). These aren't parameterized — the
+underlying computation is a closure, so type parameters would only be
+documentation.
+
+=begin code :lang<raku>
+
+use Monad::State;
+
+# Counter-style state manipulation
+my $pipeline = Monad::State.get
+    >>= -> $n { Monad::State.put($n + 1) }
+    >>= -> $  { Monad::State.put(10)      }
+    >>= -> $  { Monad::State.get          };
+
+my ($val, $final-state) = $pipeline.run(0);
+say "value: $val, state: $final-state";   # value: 10, state: 10
+
+=end code
+
+=head1 WRITING YOUR OWN
+
+Subclass C<Monad> (the base class) to define your own. You must
+implement C<bind>, C<map>, and C<unit>:
+
+=begin code :lang<raku>
+
+use Monad;
+
+class MyMonad is Monad {
+    has $.value;
+    method bind(&f) { f($.value) }
+    method map(&f)  { self.new(value => f($.value)) }
+    method unit($v) { self.new(value => $v) }
+}
+
+=end code
+
+For a parametric type, use a role instead:
+
+=begin code :lang<raku>
+
+role MyMonad[::T = Any] is Monad {
+    has T $.value;
+    method bind(&f) { f($.value) }
+    method map(&f)  { self.new(value => f($.value)) }
+    method unit($v) { self.new(value => $v) }
+}
+
+# Usage:
+my $m = MyMonad[Int].new(value => 42);
+
+=end code
+
+=head1 IMPLEMENTATION NOTES
+
+Parametric monads are implemented as Raku B<roles>, not classes — Raku
+doesn't support parametric classes. Role auto-punning means:
+
+=item C<$x ~~ Monad::Maybe> works against the bare role name regardless of whether you constructed it with a type parameter.
+=item C<isa-ok $x, Monad::Maybe> likewise.
+=item Class-method-style calls (C<Monad::Maybe.some(42)>) work because Raku auto-puns parametric roles when you invoke them.
+
+C<Monad::State> and C<Monad::Reader> remain plain classes because the
+underlying C<run> callable is type-erased (it's a closure Raku can't
+inspect). Parameterizing them would only add documentation noise.
+
+Some C<State>/C<Reader> class methods (like C<put>, C<get>, C<modify>)
+intentionally live on a non-parametric class to avoid dispatch
+collisions with Raku's built-in C<put> and C<get> on role type objects.
+
+=head1 AUTHOR
+
+Matt Doughty <matt@apogee.guru>
+
+=head1 COPYRIGHT AND LICENSE
+
+Copyright 2024–2026 Matt Doughty
+
+This library is free software; you can redistribute it and/or modify it
+under the Artistic License 2.0.
+
+=end pod

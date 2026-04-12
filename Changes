@@ -1,0 +1,22 @@
+Revision history for Monad
+
+{{$NEXT}}
+
+0.2.0  2026-04-12T16:41:12+01:00
+    - Parameterize Monad::Maybe[::T], Monad::Either[::L, ::R],
+      Monad::List[::T], Monad::Writer[::A, ::W]. Adds compile-time type
+      checking on the contained value; legacy unparameterized usage is
+      unchanged (all parameters default to Any).
+    - Implemented as parametric roles rather than classes — Raku doesn't
+      support parametric classes. `~~` and `isa-ok` against the bare
+      role name continue to work.
+    - Monad::Reader and Monad::State stay as plain classes; their
+      underlying `run` callable is type-erased (it's a closure), so type
+      parameters would only be documentation. Use plain Monad::State and
+      document your state/value types in comments.
+    - Add Monad::List to META6.json provides (was missing in 0.1.2).
+    - Comprehensive parametric-usage test suite (t/07_parametric.t).
+
+0.1.2  2024-11-XX
+    - Initial release with Monad, Monad::Maybe, Monad::Either,
+      Monad::List, Monad::Reader, Monad::State, Monad::Writer.

@@ -1,174 +1,264 @@
-# Monad
+[![Actions Status](https://github.com/m-doughty/Raku-Monad/actions/workflows/test.yml/badge.svg)](https://github.com/m-doughty/Raku-Monad/actions)
 
-## Introduction
+NAME
+====
 
-Implementation of a few common Monads in Raku.
+Monad - Parametric-typed monads for Raku
 
-You can also use the base class `Monad` to implement your own.
-
-Issues and pull requests welcome.
-
-## Infix Operators
-
-The `Monad` module implements two infix operators:
-
-- `>>=` for `bind`. The function you `bind` to should take an unwrapped value & return a Monad.
-- `>>-` for `map`. The function you `map` to should take an unwrapped value and return an unwrapped value.
-
-## Monads
-
-### Monad::Either
-
-`Either` monads are regularly used to represent OK (Right) & Error (Left) values.
-
-In some languages this is called a `Result` monad.
+SYNOPSIS
+========
 
 ```raku
-use Monad;
+use Monad::Maybe;
 use Monad::Either;
 
-sub double ($i) {
-    $i * 2;
-}
+# Type-parameterized: compile-time checks on the contained value
+my Monad::Maybe[Int] $n = Monad::Maybe[Int].some(42);
+say $n.unwrap;                          # 42
 
-sub bind_double ($i) {
-    Monad::Either.unit($i * 2);
-}
+my $err = Monad::Maybe[Int].some('x'); # throws: Str isn't Int
 
-my $ok         = Monad::Either.unit(4); # Monad::Either::Right(value=4)
-my $ok_doubled = $ok >>- &double;       # Monad::Either::Right(value=8)
-$ok_doubled.is-right                    # True
-say $ok_doubled.unwrap-right            # 8
+# Or untyped (legacy) — everything defaults to Any
+my $m = Monad::Maybe.some([1, 2, 3]);
+say $m.is-some;                         # True
 
-my $not_ok         = Monad::Either.left(4);   # Monad::Either::Left(value=4)
-my $not_ok_doubled = $ok >>- &double;         # Monad::Either::Left(value=8)
-$ok_doubled.is-right                          # False
-say $ok_doubled.unwrap-left                   # 4
-
-my $ok_doubled_bind = $ok >>= &bind_double;     # Monad::Either::Right(value=8)
-my $not_ok_bind     = $not_ok >>= &bind_double; # Monad::Either::Left(value=4)
+# Infix operators
+my $doubled = Monad::Maybe[Int].some(5) >>- { $_ * 2 };
+say $doubled.unwrap;                    # 10
 ```
 
-### Monad::List
+DESCRIPTION
+===========
 
-`List` monads allow for chaining operators on lists and flattening them.
+`Monad` is a small collection of parametric-typed monads for Raku: `Maybe`, `Either`, `List`, `Writer`, `Reader`, and `State`. The value-carrying monads accept a type parameter on their payload, giving you compile-time checking and self-documenting signatures:
 
 ```raku
-use Monad;
-use Monad::List;
-
-sub triplicate ($v) {
-    ($v, $v, $v);
-}
-
-sub duplicate_half_bind ($v) {
-  Monad::List.of($v, $v / 2);
-}
-
-my $list       = Monad::List.of(2, 3);               # Monad::List(value=[2,3])
-my $tri_list   = $list >>- &triplicate;              # Monad::List(value=[2,2,2,3,3,3])
-my $final_list = $tri_list >>= &duplicate_half_bind; # Monad::List(value=[2,1,2,1,2,1,3,1.5,3,1.5,3,1.5])
+sub load-user(Int $id --> Monad::Maybe[User]) { ... }
+sub parse(Str $raw --> Monad::Either[Str, AST]) { ... }
 ```
 
-### Monad::Maybe
+The typed forms are opt-in. Legacy `Monad::Maybe.some(42)` (without the square brackets) still works — every type parameter defaults to `Any`.
 
-`Maybe` monads model a value which may or may not be present.
+WHY
+===
 
-In some languages, this is called `Option` or `Optional`.
+Raku already has `Nil` and `Failure` for representing absent-or-errored values, but both blur the line between "no value" and "something went wrong". Monads give you a structural answer:
+
+  * `Maybe[T]` — a `T` is either present (`Some`) or absent (`None`). Unambiguous.
+
+  * `Either[L, R]` — a value is either a success (`Right R`) or a failure (`Left L`), both typed.
+
+  * `List[T]` — a sequence of `T`s, with `bind` as flatMap.
+
+  * `Writer[A, W]` — a value plus an accumulated log.
+
+  * `Reader` / `State` — computations parameterized by an environment.
+
+The payoff: your function signatures express optionality and error handling at the type level, so consumers have to handle both cases explicitly and can chain them fluently with `map` and `bind`.
+
+INSTALLATION
+============
+
+```bash
+zef install Monad
+```
+
+INFIX OPERATORS
+===============
+
+Two exported operators keep chains readable:
+
+  * ``= >> — bind. The function you bind to should take an unwrapped value and return a monad.
+
+  * ``- >> — map. The function you map to should take and return unwrapped values.
 
 ```raku
-use Monad;
+my $result = Monad::Maybe[Int].some(3)
+    >>- { $_ * 2 }                                # Some(6)
+    >>= -> $v { $v > 5 ?? Monad::Maybe[Int].some($v) !! Monad::Maybe[Int].none }
+    >>- { $_ + 1 };                               # Some(7)
+```
+
+THE MONADS
+==========
+
+Monad::Maybe
+------------
+
+Represents a value that may or may not be present. Parameterized by the type of the contained value.
+
+```raku
 use Monad::Maybe;
 
-sub double ($i) { $i * 2 }
-sub bind_double ($i) { Monad::Maybe.some($i * 2) }
+my Monad::Maybe[Str] $user = Monad::Maybe[Str].some('alice');
+my Monad::Maybe[Str] $none = Monad::Maybe[Str].none;
 
-my $some = Monad::Maybe.some(5);    # Monad::Maybe::Some(value=5)
-my $none = Monad::Maybe.none();     # Monad::Maybe::None(value=Nil)
+say $user.is-some;     # True
+say $user.value;       # alice
+say $none.is-none;     # True
+say $none.unwrap;      # Nil
 
-my $doubled = $some >>- &double;      # Monad::Maybe::Some(value=10)
-my $binded  = $some >>= &bind_double; # Monad::Maybe::Some(value=10)
+# Chain with map / bind
+my $shout = $user.map({ .uc });
+say $shout.value;      # ALICE
 
-my $none_mapped = $none >>- &double;      # Monad::Maybe::None(value=Nil)
-my $none_binded = $none >>= &bind_double; # Monad::Maybe::None(value=Nil)
-
-$none.is-some # False
-$none.is-none # True
-$some.is-some # True
-$some.is-none # False
-
-$some.unwrap # 5
-$none.unwrap # Nil
+# Type mismatch throws at construction:
+try {
+    Monad::Maybe[Int].some('not an int');
+    CATCH { default { say "rejected: {.message}" } }
+}
 ```
 
-### Monad::Reader
+Monad::Either
+-------------
 
-`Reader` monads model computations that depend on a shared environment.
+Represents a value that is one of two types. Conventionally `Left` carries an error and `Right` carries success. Parameterized by the left and right types independently.
 
 ```raku
-use Monad;
-use Monad::Reader;
+use Monad::Either;
 
-sub ask-env {
-    Monad::Reader.new(run => sub ($env) {
-        "Hello, $env!";
-    });
+sub parse-int(Str $s --> Monad::Either[Str, Int]) {
+    $s ~~ /^ (\d+) $/
+        ?? Monad::Either[Str, Int].right(+$0)
+        !! Monad::Either[Str, Int].left("'$s' is not a number");
 }
 
-my $r = ask-env();
-say $r.run("Alice"); # "Hello, Alice!"
-
-# Reader composition
-my $upper = $r.map(-> $env { $env.uc });
-say $upper.run("Bob"); # "HELLO, BOB"
-```
-
-### Monad::State
-
-`State` monads thread mutable state through pure functions.
-
-```raku
-my $m             = Monad::State.unit(42);
-my ($val, $state) = $m.run('init');
-
-say $val;   # 42
-say $state; # "init"
-
-sub inc-state ($_) {
-	Monad::State.new(run => sub ($s) { $s, $s + 1 })
+given parse-int('42') {
+    when .is-right { say "got: {.unwrap-right}" }   # got: 42
+    when .is-left  { say "error: {.unwrap-left}" }
 }
 
-my $m2              = $m.bind(&inc-state);
-my ($val2, $state2) = $m2.run(10);
-
-say $val2;   # 10
-say $state2; # 11
+# bind skips on Left, chains on Right
+my $result = parse-int('10')
+    >>= -> $n { Monad::Either[Str, Int].right($n * 2) }
+    >>= -> $n { $n > 100
+                ?? Monad::Either[Str, Int].left('too big')
+                !! Monad::Either[Str, Int].right($n) };
+say $result.gist;      # Right(20)
 ```
 
-### Monad::Writer
+Monad::List
+-----------
 
-`Writer` monads allow logging outside computations.
+A sequence monad. `bind` (aka flatMap) applies a function that returns a List and flattens one level.
 
 ```raku
-use Monad;
+use Monad::List;
+
+my $lst = Monad::List[Int].of(1, 2, 3);
+
+# Map
+my $doubled = $lst.map({ $_ * 2 });
+say $doubled.values.List;   # (2 4 6)
+
+# flatMap
+my $pairs = $lst.bind(-> $n {
+    Monad::List[Int].of($n, $n * 10)
+});
+say $pairs.values.List;     # (1 10 2 20 3 30)
+```
+
+Monad::Writer
+-------------
+
+Carries a value alongside an accumulated log. Parameterized by the value type and the log type (defaulting to `Str`).
+
+```raku
 use Monad::Writer;
 
-sub say_hi ($name) {
-    Monad::Writer.new(value => "Hello $name", logs => "Greeted $name.")
-}
+my $w = Monad::Writer[Int, Str].unit(5);
+my $logged = $w.tell('starting with 5, ')
+              .map({ $_ * 2 })
+              .tell('doubled to ')
+              .bind(-> $v {
+                  Monad::Writer[Int, Str].new(value => $v + 1, logs => "added one = {$v + 1}")
+              });
 
-my $w1 = Monad::Writer.unit("World");
-my $w2 = $w1 >>= &say_hi;
-
-say $w2.value; # "Hello World"
-say $w2.logs;   # "Greeted World."
-
-# map does not change log
-my $w3 = $w2 >>- *.uc;
-say $w3.value; # "HELLO WORLD"
-say $w3.logs;   # "Greeted World."
+say $logged.value;    # 11
+say $logged.logs;     # starting with 5, doubled to added one = 11
 ```
 
-## More Examples
+For non-string logs, subclass and override `_combine`:
 
-See the tests for more examples.
+```raku
+class ArrayLogWriter is Monad::Writer {
+    has @.logs;
+    method _combine($a, $b) { [|$a, |$b] }
+}
+```
+
+Monad::Reader and Monad::State
+------------------------------
+
+Computational monads for carrying an environment (Reader) or threading a state through a pipeline (State). These aren't parameterized — the underlying computation is a closure, so type parameters would only be documentation.
+
+```raku
+use Monad::State;
+
+# Counter-style state manipulation
+my $pipeline = Monad::State.get
+    >>= -> $n { Monad::State.put($n + 1) }
+    >>= -> $  { Monad::State.put(10)      }
+    >>= -> $  { Monad::State.get          };
+
+my ($val, $final-state) = $pipeline.run(0);
+say "value: $val, state: $final-state";   # value: 10, state: 10
+```
+
+WRITING YOUR OWN
+================
+
+Subclass `Monad` (the base class) to define your own. You must implement `bind`, `map`, and `unit`:
+
+```raku
+use Monad;
+
+class MyMonad is Monad {
+    has $.value;
+    method bind(&f) { f($.value) }
+    method map(&f)  { self.new(value => f($.value)) }
+    method unit($v) { self.new(value => $v) }
+}
+```
+
+For a parametric type, use a role instead:
+
+```raku
+role MyMonad[::T = Any] is Monad {
+    has T $.value;
+    method bind(&f) { f($.value) }
+    method map(&f)  { self.new(value => f($.value)) }
+    method unit($v) { self.new(value => $v) }
+}
+
+# Usage:
+my $m = MyMonad[Int].new(value => 42);
+```
+
+IMPLEMENTATION NOTES
+====================
+
+Parametric monads are implemented as Raku **roles**, not classes — Raku doesn't support parametric classes. Role auto-punning means:
+
+  * `$x ~~ Monad::Maybe` works against the bare role name regardless of whether you constructed it with a type parameter.
+
+  * `isa-ok $x, Monad::Maybe` likewise.
+
+  * Class-method-style calls (`Monad::Maybe.some(42)`) work because Raku auto-puns parametric roles when you invoke them.
+
+`Monad::State` and `Monad::Reader` remain plain classes because the underlying `run` callable is type-erased (it's a closure Raku can't inspect). Parameterizing them would only add documentation noise.
+
+Some `State`/`Reader` class methods (like `put`, `get`, `modify`) intentionally live on a non-parametric class to avoid dispatch collisions with Raku's built-in `put` and `get` on role type objects.
+
+AUTHOR
+======
+
+Matt Doughty <matt@apogee.guru>
+
+COPYRIGHT AND LICENSE
+=====================
+
+Copyright 2024–2026 Matt Doughty
+
+This library is free software; you can redistribute it and/or modify it under the Artistic License 2.0.
+
