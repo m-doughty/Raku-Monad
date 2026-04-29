@@ -2,6 +2,9 @@ Revision history for Monad
 
 {{$NEXT}}
 
+0.2.1  2026-04-29T23:52:52+01:00
+    - Bump Github actions to use node 24+
+
 0.2.0  2026-04-12T16:41:12+01:00
     - Parameterize Monad::Maybe[::T], Monad::Either[::L, ::R],
       Monad::List[::T], Monad::Writer[::A, ::W]. Adds compile-time type
